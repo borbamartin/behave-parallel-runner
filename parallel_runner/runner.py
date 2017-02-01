@@ -33,43 +33,46 @@ import gc
 import os
 import subprocess
 import sys
+import tempfile
 import time
+from datetime import datetime
 
-from havanna.datetime_utils import DateTimeUtil
+from pytz import timezone
 
 __author__ = 'Martin Borba - borbamartin@gmail.com'
 
 MAX_WORKERS = 0
 active_workers = []
 
-base_command = 'behave -k --junit --tags=-wip {} {}'
+base_command = 'behave -k --junit {} {}'
 tags = []
 feature_args = []
 
-dtu = DateTimeUtil(display_seconds=True)
 
-
-class Worker(object):
+class FeatureWorker(object):
     """
     This class represents a subprocess worker
     """
 
     def __init__(self, file_path):
         """
-        Initialize a Worker instance
+        Initializes a FeatureWorker instance
 
         :param file_path:
-            A string representing the file path
-
+            A string representing the feature file path
         """
         self.file_path = file_path
         self.subprocess = None
-        self.log_file = None
+        self.log_file_descriptor = None
+        self.log_file_name = None
 
     @property
     def file_name(self):
+        """
+        A string representing the feature file name (without extension)
+        """
         fp = self.file_path
-        return fp[fp.rfind(os.sep):fp.rfind('.')]
+        return fp[fp.rfind(os.sep) + 1:fp.rfind('.')]
 
 
 def _set_max_workers():
@@ -90,8 +93,8 @@ def _log(msg):
     :param msg:
         A string representing the message to _log
     """
-    dtu.refresh()
-    print('[behave-parallel-runner @ {}] {}'.format(dtu.time24, msg))
+    _time = datetime.now(timezone('US/Eastern')).strftime('%H:%M:%S')
+    print('[behave-parallel-runner @ {}] {}'.format(_time, msg))
 
 
 def _parse_args():
@@ -207,6 +210,21 @@ def _list_features():
     return feature_list
 
 
+def _create_temp_log_file(file_name):
+    """
+    Creates a unique temporary file
+
+    :param file_name:
+        A string representing the temporary file name prefix
+
+    :returns:
+        A pair (fd, name) where fd is the file descriptor returned by os.open,
+        and name is the filename
+    """
+    file_descriptor, file_name = tempfile.mkstemp(prefix=file_name)
+    return file_descriptor, file_name
+
+
 def _trigger_feature(feature_path):
     """
     Triggers a feature execution
@@ -216,16 +234,20 @@ def _trigger_feature(feature_path):
     """
     _log('Triggering feature: "{}"'.format(feature_path))
 
-    worker = Worker(feature_path)
+    worker = FeatureWorker(feature_path)
 
-    log_file_name = '{}{}{}'.format(os.getcwd(), worker.file_name, '.log')
-    log_file = open(log_file_name, "w+")
+    log_file_descriptor, log_file_name = _create_temp_log_file(worker.file_name)
 
     cmd = base_command.format(tags, feature_path)
-    process = subprocess.Popen(cmd, shell=True, stdout=log_file, stderr=log_file)
+    process = subprocess.Popen(cmd,
+                               shell=True,
+                               stdout=log_file_descriptor,
+                               stderr=log_file_descriptor)
 
-    worker.log_file = log_file
+    worker.log_file_descriptor = log_file_descriptor
+    worker.log_file_name = log_file_name
     worker.subprocess = process
+
     active_workers.append(worker)
 
 
@@ -235,10 +257,10 @@ def main():
     """
     print('\nBEHAVE PARALLEL RUNNER\n')
 
-    dtu.refresh()
-    start_date = dtu.stored_time
+    start_date = datetime.now(timezone('US/Eastern'))
 
-    _log('Execution started @ {} EST'.format(dtu.timestamp24))
+    _log('Execution started @ {} EST'.format(
+        datetime.now(timezone('US/Eastern')).strftime('%H:%M:%S')))
 
     _set_max_workers()
     _parse_args()
@@ -254,16 +276,17 @@ def main():
                 # Remove worker
                 _log('Releasing worker')
                 active_workers.remove(worker)
-                worker.log_file.close()
 
                 # Print feature log
                 _log('{} output:\n'.format('.'.join((worker.file_name, 'feature'))))
-                log_file = open(worker.log_file.name, 'r')
-                print(log_file.read())
 
-                # Remove feature log file
+                log_file = open(worker.log_file_name, 'r')
+                print(log_file.read())
                 log_file.close()
-                os.remove(worker.log_file.name)
+
+                # Delete feature log file
+                os.close(worker.log_file_descriptor)
+                os.remove(worker.log_file_name)
 
                 # Delete worker and call garbage collector
                 del worker
@@ -282,9 +305,9 @@ def main():
             # Terminate the execution
             are_active_workers = False
 
-    dtu.refresh()
-    end_date = dtu.stored_time
+    end_date = datetime.now(timezone('US/Eastern'))
     took = time.strftime('%Hh %Mm %Ss', time.gmtime((end_date - start_date).total_seconds()))
 
-    _log('Execution finished @ {} EST'.format(dtu.timestamp24))
+    _log('Execution finished @ {} EST'.format(
+        datetime.now(timezone('US/Eastern')).strftime('%H:%M:%S')))
     _log('Took {}'.format(took))
