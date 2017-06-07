@@ -1,5 +1,5 @@
 # behave-parallel-runner
-####Custom Behave Parallel Feature Runner implementation
+#### Custom Behave Parallel Feature Runner implementation
 This library provides functionality to run Behave features in parallel.
 
 The amount of features that will run in parallel is determined by **_MAX_WORKERS_**, set to the default value when not specified.
@@ -14,10 +14,10 @@ Command line usage
 
 Accepted args
 -------
-####\<tag_args\>
+#### \<tag_args\>
 * --tags=some_tag (same as 'behave' command)
 
-####\<feature_args\>
+#### \<feature_args\>
 * Single path to a features directory
 * Single path to a feature file
 * Multiple paths to different feature files
